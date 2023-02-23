@@ -1,6 +1,6 @@
 #! /bin/bash
 #
-# finddirs 1.0.0, 2023-02-23
+# finddirs 1.0.1, 2023-02-23
 #
 # Findet die Verzeichnisse, in denen Fonts, ttf-Dateien liegen oder
 # alternativ, wenn eine Dateiendung angegeben wird alle Verzeichnisse
@@ -23,7 +23,7 @@ temp_file="dirs1_$extension"
 target_file="dirs_$extension"
 
 rm --force "$temp_file"
-locate -br "^.*\.$extension" | xargs -I'{}' dirname '{}' >> "$temp_file"
+locate -br "^.*\.$extension$" | xargs -I'{}' dirname '{}' >> "$temp_file"
 
 rm --force "$target_file"
 if [ -s "$temp_file" ]; then
