@@ -1,9 +1,9 @@
 #! /bin/bash
 #
-# finddirs 1.0.1, 2023-02-23
+# finddirs 2.0.0, 2023-02-23, 2023-02-24
 #
 # Findet die Verzeichnisse, in denen Fonts, ttf-Dateien liegen oder
-# alternativ, wenn eine Dateiendung angegeben wird alle Verzeichnisse
+# alternativ, wenn eine Dateiendung angegeben wurde, alle Verzeichnisse
 # mit Dateien, die so enden.
 #
 # Das Script ist abhängig von locate, dessen Datenbank nicht automatisch
@@ -17,18 +17,31 @@
 
 exitval=1  ## Misslingen ist Default.
 
+case "$1"  in
+  -f|--find|-find)
+    search_program="find"
+    suffix="found"
+    shift
+    ;;
+  *)
+    suffix="located";;
+esac
+
 [ -n "$1" ] && extension="$1" || extension="ttf"
 
-temp_file="dirs1_$extension"
-target_file="dirs_$extension"
+temp_file="dirs1_${extension}_$suffix"
+target_file="dirs_${extension}_$suffix"
 
 rm --force "$temp_file"
-locate -br "^.*\.$extension$" | xargs -I'{}' dirname '{}' >> "$temp_file"
+if [ "$search_program" != "find" ]; then
+  locate -br "^.*\.$extension$" | xargs -I'{}' dirname '{}' >> "$temp_file"
+else
+  sudo find / -type f -iname "*.$extension" -exec ls -1 {} \; 2> /dev/null |\
+       xargs -I'{}' dirname '{}' 2> /dev/null | tee -a  /dev/stderr | uniq >> "$temp_file"
+fi  
 
 rm --force "$target_file"
 if [ -s "$temp_file" ]; then
-#  sort "$temp_file" | uniq >> "$target_file"
-#  if [ "$?" = 0 ]; then
   if sort "$temp_file" | uniq >> "$target_file"; then
     rm -f "$temp_file"
     exitval=0
@@ -36,6 +49,7 @@ if [ -s "$temp_file" ]; then
 fi
 
 if [ -s "$target_file" ]; then
+  clear
   less "$target_file" 2> /dev/null
 fi
 ls -gotrh | cut -d' ' -f3-
