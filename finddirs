@@ -1,6 +1,6 @@
 #! /bin/bash
 #
-# finddirs 2.0.0, 2023-02-23, 2023-02-24
+# finddirs 2.1.0, 2023-02-23, 2023-02-24, 2023-07-17
 #
 # Findet die Verzeichnisse, in denen Fonts, ttf-Dateien liegen oder
 # alternativ, wenn eine Dateiendung angegeben wurde, alle Verzeichnisse
@@ -17,14 +17,235 @@
 
 exitval=1  ## Misslingen ist Default.
 
-case "$1"  in
-  -f|--find|-find)
-    search_program="find"
-    suffix="found"
+## Constants: ############################
+readonly ORIGINAL_SCRIPT_NAME="finddirs"
+readonly VERSION="2.2.0"
+readonly CURRENT_SCRIPT_NAME="${0##*/}"  ## Equivalent to: "$(basename "$0")", name of the script file.
+
+## Strings for localization according to system language:
+if [ "${LANG:0:2}" = "de" ]; then
+  UI_LANGUAGE="Deutsch"
+  if [ "$CURRENT_SCRIPT_NAME" != "$ORIGINAL_SCRIPT_NAME" ]; then
+    current_name_title="Derzeitiger Dateiname"
+    current_file_name_reference=" / ${current_name_title}: $CURRENT_SCRIPT_NAME"
+  else
+    current_file_name_reference=""
+  fi
+
+  CALL_HELP_CAPTION="BEISPIELAUFRUFE:"
+
+  HELP_EXAMPLE_CALLS=" $CALL_HELP_CAPTION
+
+   $CURRENT_SCRIPT_NAME py
+   sudo $CURRENT_SCRIPT_NAME --find sh"
+
+  HELP_EXAMPLE_CALLS_FOR_OPTIONS=" $CALL_HELP_CAPTION
+
+  $CURRENT_SCRIPT_NAME -h
+  $CURRENT_SCRIPT_NAME --options
+  $CURRENT_SCRIPT_NAME --examples
+  $CURRENT_SCRIPT_NAME --version"
+
+  HELP_KNOWN_OPTIONS=" ZULÄSSIGE OPTIONEN:
+
+   Der erste Parameter darf '--find' oder '-f' sein, dann wird als Suchprogramm
+   nicht locate, sondern find benutzt, das im Gegensatz zu locate auf so gut
+   wie jedem Linux-System installiert ist.
+
+   ACHTUNG: Wenn Sie die Verwendung von find anstatt von locate erzwingen,
+   starten Sie das Skript bitte mit erhöhten Rechten, etwas via sudo,
+   denn nur so erhaltene Sie alle möglichen Fundstellen.
+
+   --find|-f         : Suche mit find statt mit locate erzwingen
+   --help|-h|--hilf  : Diese Hilfe anzeigen
+   --options)        : Listet die Optionen auf, die das Programm versteht.
+   --examples)       : Zeigt Beispielaufrufe an.
+   --version|-V      : Den Namen und die Versionsnummer des Programms anzeigen.
+   -v|-n             : Die Versionsnummer des Programms ausgeben.
+   "
+else
+  UI_LANGUAGE="English"
+  if [ "$CURRENT_SCRIPT_NAME" != "$ORIGINAL_SCRIPT_NAME" ]; then
+    current_name_title="Current script name"
+    current_file_name_reference=" / ${current_name_title}: $CURRENT_SCRIPT_NAME"
+  else
+    current_file_name_reference=""
+  fi
+
+  CALL_HELP_CAPTION="SAMPLE CALLS:"
+
+  HELP_EXAMPLE_CALLS=" $CALL_HELP_CAPTION
+
+  $CURRENT_SCRIPT_NAME py
+  sudo $CURRENT_SCRIPT_NAME --find sh"
+
+  HELP_EXAMPLE_CALLS_FOR_OPTIONS=" $CALL_HELP_CAPTION
+
+  $CURRENT_SCRIPT_NAME -h
+  $CURRENT_SCRIPT_NAME --options
+  $CURRENT_SCRIPT_NAME --examples
+  $CURRENT_SCRIPT_NAME --version"
+
+  HELP_KNOWN_OPTIONS=" POSSIBLE OPTIONS:
+
+   The first parameter may be '--find' or '-f', then not locate is used
+   as the search program, but find, which, in contrast to locate,
+   is installed on almost every Linux system.
+
+   ATTENTION: If you force the usage of find instead of locate, please
+   start the script with root prvileges, maybe with sudo, to get all
+   possible matching results.
+
+   --find|-f
+   --help|-h|--hilf  : Shows this help.
+   --options)        : Lists the options, which the program understands.
+   --examples)       : Shows few example calls.
+   --version|-V      : Displays name an version number of the program.
+   -v|-n             : Shows the version number of the program.
+   "
+fi
+
+
+### functions ##############
+
+show_help() {
+# Displays program purpose and usage help.
+
+printf "\n \e[1;33m%s\e[0m (%s)%s\n\n" "$ORIGINAL_SCRIPT_NAME" "$VERSION" "$current_file_name_reference"
+
+if [ "$UI_LANGUAGE" = "Deutsch" ]; then
+ output=" Das Programm sucht nach Verzeichnissen, die Dateien mit einer
+ bestimmten Dateiendung liegen.
+
+ Ohne Parameter oder Argumente wird automatisch nach Verzeichnissen gesucht,
+ die ttf-Dateien enthalten.
+
+ AUFRUF-VARIANTEN:
+
+   $CURRENT_SCRIPT_NAME     # Suche nach Verzeichnissen, mit TTF-Dateien
+   $CURRENT_SCRIPT_NAME <dateiendung>
+
+$HELP_KNOWN_OPTIONS
+
+$HELP_EXAMPLE_CALLS"
+
+else  # English help:
+  output=" The program searches for directories containing files with a
+ specific file extension.
+
+ POSSIBLE CALLS:
+
+  $CURRENT_SCRIPT_NAME   # Searches for directories containing TTF files.
+  $CURRENT_SCRIPT_NAME <extension>
+
+$HELP_KNOWN_OPTIONS
+
+$HELP_EXAMPLE_CALLS"
+fi
+
+printf "%s\n\n" "$output"
+}
+
+
+show_options () {
+# Displays the options the program recognizes and which might be give by program call.
+
+printf "\n \e[1;33m%s\e[0m (%s)%s\n\n" "$ORIGINAL_SCRIPT_NAME" "$VERSION" "$current_file_name_reference"
+
+printf "%s\n%s\n\n" "$HELP_KNOWN_OPTIONS" "$HELP_EXAMPLE_CALLS_FOR_OPTIONS"
+}
+
+show_example_calls () {
+# Displays some examples commands how to start the programm.
+
+printf "\n \e[1;33m%s\e[0m (%s)%s\n\n" "$ORIGINAL_SCRIPT_NAME" "$VERSION" "$current_file_name_reference"
+
+printf "%s\n\n" "$HELP_EXAMPLE_CALLS"
+}
+
+
+normalize_option () {
+# For error tolerance, the script accepts '-option' for '--option',
+# regardless of the string that is substituted for 'option', as long as
+# it is longer than one character.
+#
+# In addition, the option name is translated to lowercase.
+#
+# Overall, this causes '-examples' to be translated to '--examples',
+# for example.
+
+  if grep -Evq '^[[:alnum:]]' <<< "$1" 2>&1 > /dev/null; then
+    # Converts leading '-' to '--':
+    echo "$(sed -E 's:^-{1}([a-z]{2,}):--\1:' <<< "$1")" | tr '[:upper:]' '[:lower:]'
+  else
+    echo "$1"
+  fi
+}
+
+
+set_search_program () {
+  search_program="$1"
+  suffix="$2"
+}
+
+
+### main ###################
+
+# Catches calls for self documentation:
+if [ "$#" -gt 0 ]; then
+  for i in "$@"
+  do
+    option=$(normalize_option "$i")
+    # echo "current_option: \"$current_option\""; exit
+    case "$option" in
+        --help|-h|--hilf)
+          show_help
+          exit 0
+          ;;
+        --options|--option)
+          show_options
+          exit 0
+          ;;
+        --examples|--example|--beispiele|--beispiel)
+          show_example_calls
+          exit 0
+          ;;
+        -v|-\#)
+          echo "$VERSION"
+          exit 0
+          ;;
+        --version|-V)
+          printf "%s \(Version %s\)%s\n" "$ORIGINAL_SCRIPT_NAME" "$VERSION" "$current_file_name_reference"
+          exit 0
+          ;;
+    esac
+  done
+fi
+
+# Determines search program to use according to users optional call parameter "--find|-f"
+case "$1" in
+  -f|--find)
+    set_search_program "find" "found"
     shift
     ;;
-  *)
-    suffix="located";;
+  --locate|--mlocate)  # Falls down to following default case.
+    if command -v mlocate > /dev/null; then
+      set_search_program "mlocate" "located"
+    elif command -v locate > /dev/null; then
+      set_search_program "locate" "located"
+    else
+      set_search_program "find" "found"
+    fi
+    ;;
+  *) # Default search program is locate due to performance / speed.
+    if command -v mlocate > /dev/null; then
+      set_search_program "mlocate" "located"
+    elif command -v locate > /dev/null; then
+      set_search_program "locate" "located"
+    else
+      set_search_program "find" "found"
+    fi
+    ;;
 esac
 
 [ -n "$1" ] && extension="$1" || extension="ttf"
@@ -33,12 +254,18 @@ temp_file="dirs1_${extension}_$suffix"
 target_file="dirs_${extension}_$suffix"
 
 rm --force "$temp_file"
-if [ "$search_program" != "find" ]; then
-  locate -br "^.*\.$extension$" | xargs -I'{}' dirname '{}' >> "$temp_file"
-else
-  sudo find / -type f -iname "*.$extension" -exec ls -1 {} \; 2> /dev/null |\
-       xargs -I'{}' dirname '{}' 2> /dev/null | tee -a  /dev/stderr | uniq >> "$temp_file"
-fi  
+case "$search_program" in
+  find)
+    find / -type f -iname "*.$extension" -exec ls -1 {} \; 2> /dev/null |\
+    xargs -I'{}' dirname '{}' 2> /dev/null | tee -a  /dev/stderr | uniq >> "$temp_file"
+    ;;
+  locate|mlocate)  # Falls down to following default case.
+    "$search_program" -br "^.*\.$extension$" | xargs -I'{}' dirname '{}' >> "$temp_file"
+    ;;
+  *)
+    "$search_program" -br "^.*\.$extension$" | xargs -I'{}' dirname '{}' >> "$temp_file"
+    ;;
+esac
 
 rm --force "$target_file"
 if [ -s "$temp_file" ]; then
